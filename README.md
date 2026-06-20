@@ -91,5 +91,5 @@ The project focuses on:
 
 ## Author
 
-Rayen Brigui
+Rayan Brigui
 Computer Science student at Otto von Guericke University Magdeburg
