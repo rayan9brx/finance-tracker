@@ -1,5 +1,5 @@
 {
-  "name": "frontend",
+  "name": "finance-tracker-frontend",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,12 +9,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "preact": "^10.29.1"
+    "@vitejs/plugin-react": "latest",
+    "vite": "latest",
+    "typescript": "latest",
+    "react": "latest",
+    "react-dom": "latest"
   },
   "devDependencies": {
-    "@preact/preset-vite": "^2.10.5",
-    "@types/node": "^24.12.3",
-    "typescript": "~6.0.2",
-    "vite": "^8.0.12"
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest"
   }
 }
