@@ -19,6 +19,10 @@ function App() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [formError, setFormError] = useState("");
+  const [title, setTitle] = useState("");
+  const [amount, setAmount] = useState("");
+  const [category, setCategory] = useState("");
   const totalExpenses = expenses.reduce((total, expense) => {
     return total + expense.amount;
   }, 0);
@@ -45,6 +49,30 @@ function App() {
       });
   }, []);
 
+  function handleAddExpense(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const newAmount = Number(amount);
+
+    if (title.trim() === "" || category.trim() === "" || newAmount <= 0) {
+      setFormError("Please enter a title, category, and amount greater than 0.");
+      return;
+    }
+
+    const newExpense: Expense = {
+      id: Date.now(),
+      title: title.trim(),
+      amount: newAmount,
+      category: category.trim(),
+    };
+
+    setExpenses([...expenses, newExpense]);
+    setTitle("");
+    setAmount("");
+    setCategory("");
+    setFormError("");
+  }
+
   return (
     <main className="app-container">
       <section className="content-card">
@@ -64,14 +92,50 @@ function App() {
           </div>
         </section>
 
+        <form className="expense-form" onSubmit={handleAddExpense}>
+          <div className="form-field">
+            <label htmlFor="expense-title">Title</label>
+            <input
+              id="expense-title"
+              type="text"
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+            />
+          </div>
+
+          <div className="form-field">
+            <label htmlFor="expense-amount">Amount</label>
+            <input
+              id="expense-amount"
+              type="number"
+              min="0"
+              step="0.01"
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+            />
+          </div>
+
+          <div className="form-field">
+            <label htmlFor="expense-category">Category</label>
+            <input
+              id="expense-category"
+              type="text"
+              value={category}
+              onChange={(event) => setCategory(event.target.value)}
+            />
+          </div>
+
+          {formError && <p className="error-message">{formError}</p>}
+
+          <button type="submit">Add Expense</button>
+        </form>
+
         {loading && <p>Loading expenses...</p>}
         {error && <p className="error-message">{error}</p>}
 
-        {!loading && !error && expenses.length === 0 && (
-          <p>No expenses found.</p>
-        )}
+        {!loading && expenses.length === 0 && <p>No expenses found.</p>}
 
-        {!loading && !error && expenses.length > 0 && (
+        {!loading && expenses.length > 0 && (
           <ul className="expense-list">
             {expenses.map((expense) => (
               <li className="expense-card" key={expense.id}>
