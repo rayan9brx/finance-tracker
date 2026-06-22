@@ -20,9 +20,12 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [formError, setFormError] = useState("");
+  const [deleteError, setDeleteError] = useState("");
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const totalExpenses = expenses.reduce((total, expense) => {
     return total + expense.amount;
   }, 0);
@@ -49,7 +52,7 @@ function App() {
       });
   }, []);
 
-  function handleAddExpense(event: React.FormEvent<HTMLFormElement>) {
+  async function handleAddExpense(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const newAmount = Number(amount);
@@ -59,18 +62,58 @@ function App() {
       return;
     }
 
-    const newExpense: Expense = {
-      id: Date.now(),
-      title: title.trim(),
-      amount: newAmount,
-      category: category.trim(),
-    };
-
-    setExpenses([...expenses, newExpense]);
-    setTitle("");
-    setAmount("");
-    setCategory("");
+    setSaving(true);
     setFormError("");
+
+    try {
+      const response = await fetch("http://localhost:8080/api/expenses", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title: title.trim(),
+          amount: newAmount,
+          category: category.trim(),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to add expense");
+      }
+
+      const createdExpense: Expense = await response.json();
+
+      setExpenses([...expenses, createdExpense]);
+      setTitle("");
+      setAmount("");
+      setCategory("");
+    } catch {
+      setFormError("Could not add the expense. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteExpense(id: number) {
+    setDeletingId(id);
+    setDeleteError("");
+
+    try {
+      const response = await fetch(`http://localhost:8080/api/expenses/${id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to delete expense");
+      }
+
+      setExpenses(expenses.filter((expense) => expense.id !== id));
+    } catch {
+      setDeleteError("Could not delete the expense. Please try again.");
+    } finally {
+      setDeletingId(null);
+    }
   }
 
   return (
@@ -127,11 +170,14 @@ function App() {
 
           {formError && <p className="error-message">{formError}</p>}
 
-          <button type="submit">Add Expense</button>
+          <button type="submit" disabled={saving}>
+            {saving ? "Adding..." : "Add Expense"}
+          </button>
         </form>
 
         {loading && <p>Loading expenses...</p>}
         {error && <p className="error-message">{error}</p>}
+        {deleteError && <p className="error-message">{deleteError}</p>}
 
         {!loading && expenses.length === 0 && <p>No expenses found.</p>}
 
@@ -142,6 +188,14 @@ function App() {
                 <p className="expense-category">{expense.category}</p>
                 <h2>{expense.title}</h2>
                 <strong>{formatEuro(expense.amount)}</strong>
+                <button
+                  type="button"
+                  className="delete-button"
+                  disabled={deletingId === expense.id}
+                  onClick={() => handleDeleteExpense(expense.id)}
+                >
+                  {deletingId === expense.id ? "Deleting..." : "Delete"}
+                </button>
               </li>
             ))}
           </ul>
