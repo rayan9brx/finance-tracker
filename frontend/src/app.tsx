@@ -1,208 +1,302 @@
-import { useEffect, useState } from "react";
-
-type Expense = {
-  id: number;
-  title: string;
-  amount: number;
-  category: string;
-};
-
-// Formats numbers as euro amounts for the expense cards.
-function formatEuro(amount: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "EUR",
-  }).format(amount);
-}
-
-function App() {
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [formError, setFormError] = useState("");
-  const [deleteError, setDeleteError] = useState("");
-  const [title, setTitle] = useState("");
-  const [amount, setAmount] = useState("");
-  const [category, setCategory] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [deletingId, setDeletingId] = useState<number | null>(null);
-  const totalExpenses = expenses.reduce((total, expense) => {
-    return total + expense.amount;
-  }, 0);
-
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { FinanceProvider, useFinance } from "./context/FinanceContext";
+import { Transactions } from "./pages/Transactions";
+import { Budgets } from "./pages/Budgets";
+import { Categories } from "./pages/Categories";
+import { Settings } from "./pages/Settings";
+import { DeleteDialog, EntityForm, type Editor } from "./components/EntityForm";
+import { Icon } from "./components/ui";
+import { today } from "./utils/finance";
+import type { FinanceService } from "./services/financeService";
+const Dashboard = lazy(() =>
+  import("./pages/Dashboard").then((module) => ({ default: module.Dashboard })),
+);
+const Analytics = lazy(() =>
+  import("./pages/Analytics").then((module) => ({ default: module.Analytics })),
+);
+const pages = [
+  {
+    id: "dashboard",
+    title: "Dashboard",
+    icon: "grid",
+    description: "A clear view of your money. A little more peace of mind.",
+  },
+  {
+    id: "transactions",
+    title: "Transactions",
+    icon: "transactions",
+    description: "Every little detail, all in one place.",
+  },
+  {
+    id: "budgets",
+    title: "Budgets",
+    icon: "wallet",
+    description: "Make room for what matters to you.",
+  },
+  {
+    id: "analytics",
+    title: "Analytics",
+    icon: "chart",
+    description: "Understand your patterns. Make more informed choices.",
+  },
+  {
+    id: "categories",
+    title: "Categories",
+    icon: "tag",
+    description: "A place for every kind of income and expense.",
+  },
+  {
+    id: "settings",
+    title: "Settings",
+    icon: "settings",
+    description: "Make this workspace feel like yours.",
+  },
+];
+const route = () => window.location.hash.replace("#/", "") || "dashboard";
+function Workspace() {
+  const { data, loading, error, notice, reload, mutate } = useFinance();
+  const [page, setPage] = useState(route),
+    [month, setMonth] = useState(today().slice(0, 7));
+  const [editor, setEditor] = useState<Editor | null>(null);
+  const [deletion, setDeletion] = useState<{
+    title: string;
+    operation: (s: FinanceService) => ReturnType<FinanceService["load"]>;
+  } | null>(null);
+  const [menu, setMenu] = useState(false);
+  const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
-    // Loads expenses from the Spring Boot backend when the page opens.
-    fetch("http://localhost:8080/api/expenses")
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Failed to load expenses");
-        }
-
-        return response.json();
-      })
-      .then((data: Expense[]) => {
-        setExpenses(data);
-        setError("");
-      })
-      .catch(() => {
-        setError("Could not reach the backend. Please make sure it is running.");
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+    const change = () => {
+      setPage(route());
+      setMenu(false);
+      requestAnimationFrame(() => heading.current?.focus());
+    };
+    window.addEventListener("hashchange", change);
+    return () => window.removeEventListener("hashchange", change);
   }, []);
-
-  async function handleAddExpense(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    const newAmount = Number(amount);
-
-    if (title.trim() === "" || category.trim() === "" || newAmount <= 0) {
-      setFormError("Please enter a title, category, and amount greater than 0.");
-      return;
-    }
-
-    setSaving(true);
-    setFormError("");
-
-    try {
-      const response = await fetch("http://localhost:8080/api/expenses", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          title: title.trim(),
-          amount: newAmount,
-          category: category.trim(),
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to add expense");
-      }
-
-      const createdExpense: Expense = await response.json();
-
-      setExpenses([...expenses, createdExpense]);
-      setTitle("");
-      setAmount("");
-      setCategory("");
-    } catch {
-      setFormError("Could not add the expense. Please try again.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleDeleteExpense(id: number) {
-    setDeletingId(id);
-    setDeleteError("");
-
-    try {
-      const response = await fetch(`http://localhost:8080/api/expenses/${id}`, {
-        method: "DELETE",
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to delete expense");
-      }
-
-      setExpenses(expenses.filter((expense) => expense.id !== id));
-    } catch {
-      setDeleteError("Could not delete the expense. Please try again.");
-    } finally {
-      setDeletingId(null);
-    }
-  }
-
+  const current = pages.find((p) => p.id === page);
+  useEffect(() => {
+    document.title = `${current?.title ?? "Page not found"} · Finance Tracker`;
+  }, [current]);
+  const addKind =
+    page === "budgets"
+      ? "budget"
+      : page === "categories"
+        ? "category"
+        : "transaction";
   return (
-    <main className="app-container">
-      <section className="content-card">
-        <header className="page-header">
-          <h1>Personal Finance Tracker</h1>
-          <p>Track your expenses and manage your budget</p>
-        </header>
-
-        <section className="summary-card">
+    <div className="app-shell">
+      <a
+        className="skip-link"
+        href="#main"
+        onClick={(e) => {
+          e.preventDefault();
+          document.getElementById("main")?.focus();
+        }}
+      >
+        Skip to content
+      </a>
+      <aside className={`sidebar ${menu ? "is-open" : ""}`}>
+        <a className="brand" href="#/dashboard">
+          <span className="brand-mark">
+            <Icon name="chart" size={24} />
+          </span>
+          <span>
+            finance<span className="brand-light">tracker</span>
+            <small>MAKE ROOM FOR MORE</small>
+          </span>
+        </a>
+        <div className="nav-label">WORKSPACE</div>
+        <nav aria-label="Main navigation" id="main-navigation">
+          {pages.map((p) => (
+            <a
+              key={p.id}
+              href={`#/${p.id}`}
+              onClick={() => setMenu(false)}
+              className={page === p.id ? "active" : ""}
+              aria-current={page === p.id ? "page" : undefined}
+            >
+              <Icon name={p.icon} />
+              {p.title}
+              {page === p.id && <span className="nav-active-dot" />}
+            </a>
+          ))}
+        </nav>
+        <div className="sidebar-note">
+          <span className="status-dot" /> LOCAL WORKSPACE
+          <p>Your money, in perspective.</p>
+          <small>Built for a more intentional everyday.</small>
+        </div>
+        <div className="sidebar-profile">
+          <span className="avatar">FT</span>
           <div>
-            <p>Total Expenses</p>
-            <strong>{formatEuro(totalExpenses)}</strong>
+            <strong>Personal workspace</strong>
+            <small>Sample data · on this device</small>
           </div>
-          <div>
-            <p>Number of Expenses</p>
-            <strong>{expenses.length}</strong>
-          </div>
-        </section>
-
-        <form className="expense-form" onSubmit={handleAddExpense}>
-          <div className="form-field">
-            <label htmlFor="expense-title">Title</label>
-            <input
-              id="expense-title"
-              type="text"
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-            />
-          </div>
-
-          <div className="form-field">
-            <label htmlFor="expense-amount">Amount</label>
-            <input
-              id="expense-amount"
-              type="number"
-              min="0"
-              step="0.01"
-              value={amount}
-              onChange={(event) => setAmount(event.target.value)}
-            />
-          </div>
-
-          <div className="form-field">
-            <label htmlFor="expense-category">Category</label>
-            <input
-              id="expense-category"
-              type="text"
-              value={category}
-              onChange={(event) => setCategory(event.target.value)}
-            />
-          </div>
-
-          {formError && <p className="error-message">{formError}</p>}
-
-          <button type="submit" disabled={saving}>
-            {saving ? "Adding..." : "Add Expense"}
+        </div>
+      </aside>
+      <div className="main-area">
+        <header className="topbar">
+          <button
+            className="mobile-toggle icon-button"
+            aria-label="Toggle navigation"
+            aria-expanded={menu}
+            aria-controls="main-navigation"
+            onClick={() => setMenu(!menu)}
+          >
+            ☰
           </button>
-        </form>
-
-        {loading && <p>Loading expenses...</p>}
-        {error && <p className="error-message">{error}</p>}
-        {deleteError && <p className="error-message">{deleteError}</p>}
-
-        {!loading && expenses.length === 0 && <p>No expenses found.</p>}
-
-        {!loading && expenses.length > 0 && (
-          <ul className="expense-list">
-            {expenses.map((expense) => (
-              <li className="expense-card" key={expense.id}>
-                <p className="expense-category">{expense.category}</p>
-                <h2>{expense.title}</h2>
-                <strong>{formatEuro(expense.amount)}</strong>
+          <div className="breadcrumb">
+            Workspace <span>/</span>{" "}
+            <strong>{current?.title ?? "Not found"}</strong>
+          </div>
+          <span className="local-badge">
+            <span className="status-dot" />
+            Local demo
+          </span>
+        </header>
+        <main id="main" tabIndex={-1}>
+          <div className="page-header">
+            <div>
+              <p className="eyebrow">YOUR FINANCES, SIMPLIFIED</p>
+              <h1 ref={heading} tabIndex={-1}>
+                {current?.title ?? "Page not found"}
+              </h1>
+              <p>
+                {current?.description ??
+                  "This page does not exist. Choose a section from the navigation."}
+              </p>
+            </div>
+            <div className="page-actions">
+              {["dashboard", "budgets", "analytics"].includes(page) && (
+                <label className="month-picker">
+                  <span className="sr-only">Selected month</span>
+                  <input
+                    aria-label="Selected month"
+                    type="month"
+                    value={month}
+                    onChange={(e) => {
+                      if (/^\d{4}-(0[1-9]|1[0-2])$/.test(e.target.value))
+                        setMonth(e.target.value);
+                    }}
+                  />
+                </label>
+              )}
+              {current && page !== "settings" && page !== "analytics" && (
                 <button
-                  type="button"
-                  className="delete-button"
-                  disabled={deletingId === expense.id}
-                  onClick={() => handleDeleteExpense(expense.id)}
+                  className="button"
+                  disabled={!data || loading || !!error}
+                  onClick={() => setEditor({ kind: addKind })}
                 >
-                  {deletingId === expense.id ? "Deleting..." : "Delete"}
+                  <Icon name="plus" size={17} />
+                  Add {addKind}
                 </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    </main>
+              )}
+            </div>
+          </div>
+          {loading ? (
+            <div role="status" className="state-card">
+              Loading your financial picture…
+            </div>
+          ) : error ? (
+            <div role="alert" className="state-card">
+              <h2>Unable to open your workspace</h2>
+              <p>{error}</p>
+              <button className="button" onClick={() => void reload()}>
+                Try again
+              </button>
+            </div>
+          ) : (
+            data && (
+              <Suspense
+                fallback={
+                  <div role="status" className="state-card">
+                    Loading your overview…
+                  </div>
+                }
+              >
+                {page === "dashboard" && (
+                  <Dashboard
+                    month={month}
+                    onEdit={(value) =>
+                      setEditor({ kind: "transaction", value })
+                    }
+                  />
+                )}
+                {page === "transactions" && (
+                  <Transactions
+                    onEdit={(value) =>
+                      setEditor({ kind: "transaction", value })
+                    }
+                    onDelete={(t) =>
+                      setDeletion({
+                        title: "transaction",
+                        operation: (s) => s.deleteTransaction(t.id),
+                      })
+                    }
+                  />
+                )}
+                {page === "budgets" && (
+                  <Budgets
+                    month={month}
+                    onEdit={(value) => setEditor({ kind: "budget", value })}
+                    onDelete={(b) =>
+                      setDeletion({
+                        title: "budget",
+                        operation: (s) => s.deleteBudget(b.id),
+                      })
+                    }
+                  />
+                )}
+                {page === "analytics" && <Analytics month={month} />}
+                {page === "categories" && (
+                  <Categories
+                    onEdit={(value) => setEditor({ kind: "category", value })}
+                    onDelete={(c) =>
+                      setDeletion({
+                        title: "category",
+                        operation: (s) => s.deleteCategory(c.id),
+                      })
+                    }
+                  />
+                )}
+                {page === "settings" && <Settings />}
+              </Suspense>
+            )
+          )}
+        </main>
+      </div>
+      {notice && (
+        <div className="toast" role="status">
+          <span>✓</span>
+          {notice}
+        </div>
+      )}
+      {editor && (
+        <EntityForm
+          editor={editor}
+          month={month}
+          onClose={() => setEditor(null)}
+        />
+      )}{" "}
+      {deletion && (
+        <DeleteDialog
+          title={deletion.title}
+          onDelete={() =>
+            mutate(
+              deletion.operation,
+              `${deletion.title[0].toUpperCase()}${deletion.title.slice(1)} deleted.`,
+            )
+          }
+          onClose={() => setDeletion(null)}
+        />
+      )}
+    </div>
   );
 }
-
-export default App;
+export default function App() {
+  return (
+    <FinanceProvider>
+      <Workspace />
+    </FinanceProvider>
+  );
+}

@@ -12,6 +12,8 @@ target/
 
 # Logs
 *.log
+frontend/test-results/
+frontend/playwright-report/
 
 # OS files
 .DS_Store
